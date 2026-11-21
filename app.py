@@ -1,7 +1,10 @@
+
 import os
+import logging
 import requests
 from flask import Flask, request, jsonify
 
+logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
 BASE_URL = os.getenv(
@@ -19,13 +22,15 @@ def alice():
         return "Alice AI server is running!"
 
     data = request.get_json(silent=True) or {}
-    command = data.get("request", {}).get("command", "").strip()
+    command = data.get("request", {}).get("command", "")
+    command = command.strip() if isinstance(command, str) else ""
 
     answer = "Привет! Спроси меня о чём-нибудь."
 
     if command:
         if not API_KEY or not MODEL:
-            answer = "ИИ пока не настроен. Попробуй позже."
+            answer = "ИИ пока не настроен."
+            logging.error("Missing API_KEY or MODEL")
         else:
             try:
                 result = requests.post(
@@ -39,22 +44,36 @@ def alice():
                         "messages": [
                             {
                                 "role": "system",
-                                "content": "Ты голосовой помощник. Отвечай по-русски, кратко и понятно."
+                                "content": "Отвечай по-русски, кратко и понятно."
                             },
                             {
                                 "role": "user",
                                 "content": command
                             }
-                        ]
+                        ],
+                        "max_tokens": 80
                     },
-                    timeout=20
+                    timeout=3
                 )
 
                 result.raise_for_status()
                 answer = result.json()["choices"][0]["message"]["content"]
 
+            except requests.exceptions.Timeout:
+                logging.exception("Starimg request timed out")
+                answer = "ИИ не успел ответить. Попробуй ещё раз."
+
+            except requests.exceptions.HTTPError:
+                logging.error(
+                    "Starimg HTTP error %s: %s",
+                    result.status_code,
+                    result.text[:1000]
+                )
+                answer = "Ошибка обращения к ИИ."
+
             except Exception:
-                answer = "Не получилось получить ответ от ИИ. Попробуй ещё раз."
+                logging.exception("Unexpected Starimg error")
+                answer = "Ошибка обработки ответа ИИ."
 
     return jsonify({
         "response": {
@@ -66,4 +85,8 @@ def alice():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 10000))
+    )
+    

@@ -47,11 +47,11 @@ def alice():
                             "parts": [{"text": command}]
                         }],
                         "generationConfig": {
-                            "maxOutputTokens": 100,
-                            "temperature": 0.5
+                            "maxOutputTokens": 40,
+                            "temperature": 0.2
                         }
                     },
-                    timeout=3
+                    timeout=4
                 )
 
                 result.raise_for_status()

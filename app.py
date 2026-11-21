@@ -1,4 +1,3 @@
-
 import os
 import logging
 import requests
@@ -7,14 +6,8 @@ from flask import Flask, request, jsonify
 logging.basicConfig(level=logging.INFO)
 app = Flask(__name__)
 
-BASE_URL = os.getenv(
-    "STARIMG_BASE_URL",
-    "https://ai.starimg.ru/v1"
-).rstrip("/")
-
-API_KEY = os.getenv("STARIMG_API_KEY")
-MODEL = os.getenv("STARIMG_MODEL")
-
+API_KEY = os.getenv("GEMINI_API_KEY")
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 @app.route("/", methods=["GET", "POST"])
 def alice():
@@ -28,52 +21,55 @@ def alice():
     answer = "Привет! Спроси меня о чём-нибудь."
 
     if command:
-        if not API_KEY or not MODEL:
-            answer = "ИИ пока не настроен."
-            logging.error("Missing API_KEY or MODEL")
+        if not API_KEY:
+            answer = "Не настроен ключ Gemini."
         else:
             try:
+                url = (
+                    "https://generativelanguage.googleapis.com/"
+                    f"v1beta/models/{MODEL}:generateContent"
+                )
+
                 result = requests.post(
-                    BASE_URL + "/chat/completions",
+                    url,
                     headers={
-                        "Authorization": f"Bearer {API_KEY}",
+                        "x-goog-api-key": API_KEY,
                         "Content-Type": "application/json"
                     },
                     json={
-                        "model": MODEL,
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "Отвечай по-русски, кратко и понятно."
-                            },
-                            {
-                                "role": "user",
-                                "content": command
-                            }
-                        ],
-                        "max_tokens": 80
+                        "systemInstruction": {
+                            "parts": [{
+                                "text": "Ты голосовой помощник. "
+                                        "Отвечай по-русски, кратко и понятно."
+                            }]
+                        },
+                        "contents": [{
+                            "parts": [{"text": command}]
+                        }],
+                        "generationConfig": {
+                            "maxOutputTokens": 100,
+                            "temperature": 0.5
+                        }
                     },
                     timeout=3
                 )
 
                 result.raise_for_status()
-                answer = result.json()["choices"][0]["message"]["content"]
+                answer = result.json()["candidates"][0]["content"]["parts"][0]["text"]
 
             except requests.exceptions.Timeout:
-                logging.exception("Starimg request timed out")
-                answer = "ИИ не успел ответить. Попробуй ещё раз."
-
+                logging.exception("Gemini timeout")
+                answer = "Gemini не успел ответить."
             except requests.exceptions.HTTPError:
                 logging.error(
-                    "Starimg HTTP error %s: %s",
+                    "Gemini HTTP %s: %s",
                     result.status_code,
                     result.text[:1000]
                 )
-                answer = "Ошибка обращения к ИИ."
-
+                answer = "Ошибка обращения к Gemini."
             except Exception:
-                logging.exception("Unexpected Starimg error")
-                answer = "Ошибка обработки ответа ИИ."
+                logging.exception("Gemini error")
+                answer = "Ошибка обработки ответа Gemini."
 
     return jsonify({
         "response": {
@@ -82,7 +78,6 @@ def alice():
         },
         "version": "1.0"
     })
-
 
 if __name__ == "__main__":
     app.run(

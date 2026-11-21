@@ -47,7 +47,7 @@ def alice():
                             }
                         ]
                     },
-                    timeout=20
+                    timeout=3
                 )
 
                 result.raise_for_status()
